@@ -3,7 +3,8 @@
 # $2 - bucket
 # $3 - accessKeyId
 # $4 - secret
-# [$5 - configuration.properties]
+# $5 - secret
+# [$6 - configuration.properties]
 
 # additional amazon client metrics: -Dcom.amazonaws.sdk.enableDefaultMetrics
 java -cp lib/*:bin/* com.quobyte.s3bench.S3BenchmarkClient "$@"

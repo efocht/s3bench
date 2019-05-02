@@ -135,8 +135,8 @@ public class S3BenchmarkClient {
       int sample = (int) (sampleId % configuration.getSampleCount());
       S3Object object = client.getObject(bucket, clientId + sample);
       assert (object.getObjectMetadata().getContentLength() == data.length)
-          : object.getObjectMetadata().getContentLength() + " != " + data.length + " for "
-            + clientId + sample;
+        : object.getObjectMetadata().getContentLength() + " != " + data.length + " for "
+        + clientId + sample;
 
       long dataRead = 0;
       try (S3ObjectInputStream in = object.getObjectContent()) {
@@ -156,9 +156,10 @@ public class S3BenchmarkClient {
   }
 
   private static void singleStreamPerformanceTest(
-      String host,
-      String bucket,
-      Mode mode) {
+                                                  String host,
+                                                  String bucket,
+                                                  String prefix,
+                                                  Mode mode) {
     AmazonS3 client = client(host, mode);
     byte[] data;
     if (configuration.benchmarkOps()) {
@@ -168,10 +169,10 @@ public class S3BenchmarkClient {
       data = new byte[configuration.getOpsObjectSize()];
       ThreadLocalRandom.current().nextBytes(data);
       System.out.println("method, min, max, avg, throughput (based on avg), ops/s (based on avg),"
-          + " operation count");
-      singleStreamWritePerformance(client, bucket, data);
+                         + " operation count, bytes moved, seconds");
+      singleStreamWritePerformance(client, bucket, prefix, data);
       if (configuration.benchmarkGet()) {
-        singleStreamReadPerformance(client, bucket, data);
+        singleStreamReadPerformance(client, bucket, prefix, data);
       }
       System.out.println();
     }
@@ -183,10 +184,10 @@ public class S3BenchmarkClient {
       data = new byte[configuration.getTpObjectSize()];
       ThreadLocalRandom.current().nextBytes(data);
       System.out.println("method, min, max, avg, throughput (based on avg), ops/s (based on avg),"
-          + " operation count");
-      singleStreamWritePerformance(client, bucket, data);
+                         + " operation count, bytes moved, seconds");
+      singleStreamWritePerformance(client, bucket, prefix, data);
       if (configuration.benchmarkGet()) {
-        singleStreamReadPerformance(client, bucket, data);
+        singleStreamReadPerformance(client, bucket, prefix, data);
       }
       System.out.println();
     }
@@ -194,36 +195,51 @@ public class S3BenchmarkClient {
     client.shutdown();
   }
 
-  private static void singleStreamWritePerformance(AmazonS3 client, String bucket, byte[] data) {
-    PutClient putClient = new PutClient("client0.0.", client, bucket, data, true);
+  private static void singleStreamWritePerformance(AmazonS3 client, String bucket, String prefix, byte[] data) {
+    PutClient putClient = new PutClient(prefix + "client0.0.", client, bucket, data, true);
+    long startTime = System.nanoTime();
     putClient.run();
+    long endTime = System.nanoTime();
+    long sumOfBytes = putClient.counter * configuration.getTpObjectSize();
     System.out.println("put, "
-        + formattedNsToMs(putClient.min) + ", "
-        + formattedNsToMs(putClient.max) + ", "
-        + formattedNsToMs(putClient.avg) + ", "
-        + formattedBps(putClient.bpS) + ", "
-        + formatOps(putClient.opS) + ", "
-        + formattedOpCount(putClient.counter));
+                       + formattedNsToMs(putClient.min) + ", "
+                       + formattedNsToMs(putClient.max) + ", "
+                       + formattedNsToMs(putClient.avg) + ", "
+                       + formattedBps(putClient.bpS) + ", "
+                       + formatOps(putClient.opS) + ", "
+                       + formattedOpCount(putClient.counter) + ", "
+                       + formattedLong(sumOfBytes) + ", "
+                       + formattedNsToS(endTime - startTime));
   }
 
-  private static void singleStreamReadPerformance(AmazonS3 client, String bucket, byte[] data) {
-    GetClient getClient = new GetClient("client0.0.", client, bucket, data, true);
+  private static void singleStreamReadPerformance(AmazonS3 client, String bucket, String prefix, byte[] data) {
+    GetClient getClient = new GetClient(prefix + "client0.0.", client, bucket, data, true);
+    long startTime = System.nanoTime();
     getClient.run();
+    long endTime = System.nanoTime();
+    long sumOfBytes = getClient.counter * configuration.getTpObjectSize();
     System.out.println("get, "
-        + formattedNsToMs(getClient.min) + ", "
-        + formattedNsToMs(getClient.max) + ", "
-        + formattedNsToMs(getClient.avg) + ", "
-        + formattedBps(getClient.bpS) + ", "
-        + formatOps(getClient.opS) + ", "
-        + formattedOpCount(getClient.counter));
+                       + formattedNsToMs(getClient.min) + ", "
+                       + formattedNsToMs(getClient.max) + ", "
+                       + formattedNsToMs(getClient.avg) + ", "
+                       + formattedBps(getClient.bpS) + ", "
+                       + formatOps(getClient.opS) + ", "
+                       + formattedOpCount(getClient.counter) + ", "
+                       + formattedLong(sumOfBytes) + ", "
+                       + formattedNsToS(endTime - startTime));
   }
 
   private static void multiStreamPerformanceTest(
-      String host,
-      String bucket,
-      Mode mode) throws InterruptedException {
+                                                 String host,
+                                                 String bucket,
+                                                 String prefix,
+                                                 Mode mode) throws InterruptedException {
     byte[] data;
+    boolean limit = false;
 
+    if (configuration.getMultiStreamRuntimeS() == 0) {
+      limit = true;
+    }
     if (configuration.benchmarkOps()) {
       System.out.println("## multi-stream latency");
       System.out.println("Object size: " + formattedObjectSize(configuration.getOpsObjectSize()));
@@ -235,15 +251,15 @@ public class S3BenchmarkClient {
       data = new byte[configuration.getOpsObjectSize()];
       ThreadLocalRandom.current().nextBytes(data);
       System.out.println("method, min, max, avg, aggregated throughput (based on avg),"
-          + " aggregated ops/s (based on avg),"
-          + " aggregated operation count");
-      boolean objectLayoutComplete = multiStreamWritePerformance(host, bucket, mode, data);
+                         + " aggregated ops/s (based on avg),"
+                         + " aggregated operation count, bytes moved, seconds");
+      boolean objectLayoutComplete = multiStreamWritePerformance(host, bucket, prefix, mode, limit, data);
       if (configuration.benchmarkGet()) {
         if (objectLayoutComplete) {
-          multiStreamReadPerformance(host, bucket, mode, data);
+          multiStreamReadPerformance(host, bucket, prefix, mode, limit, data);
         } else {
           System.out.println("INFO: multi-stream read was skipped."
-              + " Not all objects could have been laid out during the write phase.");
+                             + " Not all objects could have been laid out during the write phase.");
           System.out.println("INFO: Extend the runtime or decrease the target sample count.");
         }
       }
@@ -261,15 +277,15 @@ public class S3BenchmarkClient {
       data = new byte[configuration.getTpObjectSize()];
       ThreadLocalRandom.current().nextBytes(data);
       System.out.println("method, min, max, avg, aggregated throughput (based on avg),"
-          + " aggregated ops/s (based on avg),"
-          + " aggregated operation count");
-      boolean objectLayoutComplete = multiStreamWritePerformance(host, bucket, mode, data);
+                         + " aggregated ops/s (based on avg),"
+                         + " aggregated operation count, bytes moved, seconds");
+      boolean objectLayoutComplete = multiStreamWritePerformance(host, bucket, prefix, mode, limit, data);
       if (configuration.benchmarkGet()) {
         if (objectLayoutComplete) {
-          multiStreamReadPerformance(host, bucket, mode, data);
+          multiStreamReadPerformance(host, bucket, prefix, mode, limit, data);
         } else {
           System.out.println("INFO: multi-stream read was skipped."
-              + " Not all objects could have been laid out during the write phase.");
+                             + " Not all objects could have been laid out during the write phase.");
           System.out.println("INFO: Extend the runtime or decrease the target sample count.");
         }
       }
@@ -281,38 +297,45 @@ public class S3BenchmarkClient {
    * @return true if all objects have been laid out properly.
    */
   private static boolean multiStreamWritePerformance(
-      String host,
-      String bucket,
-      Mode mode,
-      byte[] data) throws InterruptedException {
+                                                     String host,
+                                                     String bucket,
+                                                     String prefix,
+                                                     Mode mode,
+                                                     boolean limit,
+                                                     byte[] data) throws InterruptedException {
     final int totalThreads = clients * threads;
     AmazonS3[] amazonClients = new AmazonS3[clients];
     PutClient[] putClients = new PutClient[totalThreads];
     int i = 0;
+    long startTime, endTime;
+    startTime = System.nanoTime();
     for (int c = 0; c < clients; c++) {
       amazonClients[c] = client(host, mode);
       for (int t = 0; t < threads; t++) {
         putClients[i++] = new PutClient(
-            "client" + c + "." + t + ".",
-            amazonClients[c],
-            bucket,
-            data,
-            false);
+                                        prefix + "client" + c + "." + t + ".",
+                                        amazonClients[c],
+                                        bucket,
+                                        data,
+                                        limit);
       }
     }
     for (PutClient putClient : putClients) {
       putClient.start();
     }
-    Thread.sleep(configuration.getMultiStreamRuntimeS() * 1000);
-    for (PutClient putClient : putClients) {
-      putClient.interrupt();
+    if (!limit) {
+      Thread.sleep(configuration.getMultiStreamRuntimeS() * 1000);
+      for (PutClient putClient : putClients) {
+        putClient.interrupt();
+      }
     }
     long minOfMins = Long.MAX_VALUE;
     long maxOfMaxs = 0;
     long sumOfAvgs = 0;
-    long sumOfBps = 0;
+    double sumOfBps = 0;
     double sumOfOps = 0;
     long sumOfCounter = 0;
+    long sumOfBytes = 0;
     boolean objectLayoutComplete = true;
     for (PutClient putClient : putClients) {
       putClient.join();
@@ -324,52 +347,63 @@ public class S3BenchmarkClient {
       sumOfCounter += putClient.counter;
       objectLayoutComplete &= putClient.counter >= configuration.getSampleCount();
     }
+    sumOfBytes += sumOfCounter * configuration.getTpObjectSize();
+    endTime = System.nanoTime();
     for (AmazonS3 amazonClient : amazonClients) {
       amazonClient.shutdown();
     }
     System.out.println("PUT, "
-        + formattedNsToMs(minOfMins) + ", "
-        + formattedNsToMs(maxOfMaxs) + ", "
-        + formattedNsToMs(sumOfAvgs / totalThreads) + ", "
-        + formattedBps(sumOfBps) + ", "
-        + formatOps(sumOfOps) + ", "
-        + formattedOpCount(sumOfCounter));
+                       + formattedNsToMs(minOfMins) + ", "
+                       + formattedNsToMs(maxOfMaxs) + ", "
+                       + formattedNsToMs(sumOfAvgs / totalThreads) + ", "
+                       + formattedBps(sumOfBps) + ", "
+                       + formatOps(sumOfOps) + ", "
+                       + formattedOpCount(sumOfCounter) + ", "
+                       + formattedLong(sumOfBytes) + ", "
+                       + formattedNsToS(endTime - startTime));
     return objectLayoutComplete;
   }
 
   private static void multiStreamReadPerformance(
-      String host,
-      String bucket,
-      Mode mode,
-      byte[] data) throws InterruptedException {
+                                                 String host,
+                                                 String bucket,
+                                                 String prefix,
+                                                 Mode mode,
+                                                 boolean limit,
+                                                 byte[] data) throws InterruptedException {
     final int totalThreads = clients * threads;
     AmazonS3[] amazonClients = new AmazonS3[clients];
     GetClient[] getClients = new GetClient[totalThreads];
     int i = 0;
+    long startTime, endTime;
+    startTime = System.nanoTime();
     for (int c = 0; c < clients; c++) {
       amazonClients[c] = client(host, mode);
       for (int t = 0; t < threads; t++) {
         getClients[i++] = new GetClient(
-            "client" + c + "." + t + ".",
-            amazonClients[c],
-            bucket,
-            data,
-            false);
+                                        prefix + "client" + c + "." + t + ".",
+                                        amazonClients[c],
+                                        bucket,
+                                        data,
+                                        limit);
       }
     }
     for (GetClient getClient : getClients) {
       getClient.start();
     }
-    Thread.sleep(configuration.getMultiStreamRuntimeS() * 1000);
-    for (GetClient getClient : getClients) {
-      getClient.interrupt();
+    if (!limit) {
+      Thread.sleep(configuration.getMultiStreamRuntimeS() * 1000);
+      for (GetClient getClient : getClients) {
+        getClient.interrupt();
+      }
     }
     long minOfMins = Long.MAX_VALUE;
     long maxOfMaxs = 0;
     long sumOfAvgs = 0;
-    long sumOfBps = 0;
+    double sumOfBps = 0;
     double sumOfOps = 0;
     long sumOfCounter = 0;
+    long sumOfBytes = 0;
     for (GetClient getClient : getClients) {
       getClient.join();
       minOfMins = Math.min(minOfMins, getClient.min);
@@ -379,20 +413,24 @@ public class S3BenchmarkClient {
       sumOfOps += getClient.opS;
       sumOfCounter += getClient.counter;
     }
+    sumOfBytes += sumOfCounter * configuration.getTpObjectSize();
+    endTime = System.nanoTime();
     for (AmazonS3 amazonClient : amazonClients) {
       amazonClient.shutdown();
     }
     System.out.println("GET, "
-        + formattedNsToMs(minOfMins) + ", "
-        + formattedNsToMs(maxOfMaxs) + ", "
-        + formattedNsToMs(sumOfAvgs / totalThreads) + ", "
-        + formattedBps(sumOfBps) + ", "
-        + formatOps(sumOfOps) + ", "
-        + formattedOpCount(sumOfCounter));
+                       + formattedNsToMs(minOfMins) + ", "
+                       + formattedNsToMs(maxOfMaxs) + ", "
+                       + formattedNsToMs(sumOfAvgs / totalThreads) + ", "
+                       + formattedBps(sumOfBps) + ", "
+                       + formatOps(sumOfOps) + ", "
+                       + formattedOpCount(sumOfCounter) + ", "
+                       + formattedLong(sumOfBytes) + ", "
+                       + formattedNsToS(endTime - startTime));
   }
 
   public static void main(String[] args) throws InterruptedException {
-    if (args == null || args.length < 4) {
+    if (args == null || args.length < 5) {
       printUsage();
       System.exit(1);
       return;
@@ -402,24 +440,25 @@ public class S3BenchmarkClient {
       String bucket = args[1];
       String awsAccessKeyId = args[2];
       String awsSecretKey = args[3];
-      String configurationPath = args.length > 4 ? args[4] : null;
+      String objPrefix = args[4];
+      String configurationPath = args.length > 5 ? args[5] : null;
       AWSCredentials credentials = new BasicAWSCredentials(awsAccessKeyId, awsSecretKey);
       credentialsProvider = new AWSCredentialsProvider() {
-        @Override
-        public void refresh() {}
+          @Override
+          public void refresh() {}
 
-        @Override
-        public AWSCredentials getCredentials() {
-          return credentials;
-        }
-      };
+          @Override
+          public AWSCredentials getCredentials() {
+            return credentials;
+          }
+        };
       configuration = new Configuration(configurationPath);
 
       System.out.println("S3 Service Benchmark (powered by Amazon SDK 1.11.186)");
       System.out.println("Path-style bucket addressing: " + configuration.pathStyle());
       System.out.println("HTTPS: " + configuration.useSsl());
       System.out.println("Client-side MD5 verification: "
-          + configuration.isClientMd5VerificationEnabled());
+                         + configuration.isClientMd5VerificationEnabled());
       if (configuration.benchmarkUnsigned()
           || configuration.benchmarkPresigned()
           || configuration.benchmarkChunked()) {
@@ -449,11 +488,11 @@ public class S3BenchmarkClient {
       if (configuration.benchmarkUnsigned()) {
         System.out.println("# unsigned payload benchmark");
         if (configuration.benchmarkSingleStream()) {
-          singleStreamPerformanceTest(host, bucket, Mode.UNSIGNED);
+          singleStreamPerformanceTest(host, bucket, objPrefix, Mode.UNSIGNED);
           System.out.println();
         }
         if (configuration.benchmarkMultiStream()) {
-          multiStreamPerformanceTest(host, bucket, Mode.UNSIGNED);
+          multiStreamPerformanceTest(host, bucket, objPrefix, Mode.UNSIGNED);
         }
         System.out.println();
         System.out.println();
@@ -462,11 +501,11 @@ public class S3BenchmarkClient {
       if (configuration.benchmarkPresigned()) {
         System.out.println("# SHA256 signed payload benchmark");
         if (configuration.benchmarkSingleStream()) {
-          singleStreamPerformanceTest(host, bucket, Mode.PRESIGNED);
+          singleStreamPerformanceTest(host, bucket, objPrefix, Mode.PRESIGNED);
           System.out.println();
         }
         if (configuration.benchmarkMultiStream()) {
-          multiStreamPerformanceTest(host, bucket, Mode.PRESIGNED);
+          multiStreamPerformanceTest(host, bucket, objPrefix, Mode.PRESIGNED);
         }
         System.out.println();
         System.out.println();
@@ -475,11 +514,11 @@ public class S3BenchmarkClient {
       if (configuration.benchmarkChunked()) {
         System.out.println("# Signature V4 chunked encoding benchmark");
         if (configuration.benchmarkSingleStream()) {
-          singleStreamPerformanceTest(host, bucket, Mode.CHUNKED);
+          singleStreamPerformanceTest(host, bucket, objPrefix, Mode.CHUNKED);
           System.out.println();
         }
         if (configuration.benchmarkMultiStream()) {
-          multiStreamPerformanceTest(host, bucket, Mode.CHUNKED);
+          multiStreamPerformanceTest(host, bucket, objPrefix, Mode.CHUNKED);
         }
       }
 
@@ -498,7 +537,10 @@ public class S3BenchmarkClient {
           String[] keys = new String[objects.getObjectSummaries().size()];
           int i = 0;
           for (S3ObjectSummary object : objects.getObjectSummaries()) {
-            keys[i++] = object.getKey();
+            String oKey = object.getKey();
+            if (oKey.contains(objPrefix + "client")) {
+              keys[i++] = oKey;
+            }
           }
           numDeleted += client.deleteObjects(request.withKeys(keys)).getDeletedObjects().size();
         } while (!objects.getObjectSummaries().isEmpty());
@@ -524,20 +566,20 @@ public class S3BenchmarkClient {
     AmazonS3ClientBuilder clientBuilder = AmazonS3ClientBuilder.standard();
     clientBuilder.setCredentials(credentialsProvider);
     ClientConfiguration clientConfiguration = new ClientConfiguration()
-        .withProtocol(configuration.useSsl()
-            ? Protocol.HTTPS
-            : Protocol.HTTP)
-        .withTcpKeepAlive(true)
-        .withSocketTimeout(2 * 60 * 1000);
+      .withProtocol(configuration.useSsl()
+                    ? Protocol.HTTPS
+                    : Protocol.HTTP)
+      .withTcpKeepAlive(true)
+      .withSocketTimeout(2 * 60 * 1000);
     switch (mode) {
-      case UNSIGNED:
-        clientConfiguration.setSignerOverride("S3SignerType");
-      case PRESIGNED:
-        clientBuilder.setChunkedEncodingDisabled(true);
-        break;
-      case CHUNKED:
-      default:
-        break;
+    case UNSIGNED:
+      clientConfiguration.setSignerOverride("S3SignerType");
+    case PRESIGNED:
+      clientBuilder.setChunkedEncodingDisabled(true);
+      break;
+    case CHUNKED:
+    default:
+      break;
     }
     clientConfiguration.setCacheResponseMetadata(false);
     clientBuilder.setClientConfiguration(clientConfiguration);
@@ -576,7 +618,7 @@ public class S3BenchmarkClient {
         double mbps = kbps / 1000.0;
         if (mbps > 1000.0) {
           // G
-          return String.format("%.2f Mb/s", mbps / 1000.0);
+          return String.format("%.2f Gb/s", mbps / 1000.0);
         } else {
           return String.format("%.2f Mb/s", mbps);
         }
@@ -591,6 +633,15 @@ public class S3BenchmarkClient {
   private static String formattedNsToMs(long ns) {
     double ms = (double) ns / (1000.0 * 1000.0);
     return String.format("%.2f ms", ms);
+  }
+
+  private static String formattedNsToS(long ns) {
+    double s = (double) ns / (1000.0 * 1000.0 * 1000.0);
+    return String.format("%.2f s", s);
+  }
+
+  private static String formattedLong(long n) {
+    return String.format("%d B", n);
   }
 
   private static String formattedObjectSize(int bytes) {

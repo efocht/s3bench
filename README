@@ -6,9 +6,16 @@ uses the AWS S3 Java SDK as foundation and provides basic CLI and
 properties file-based customization for benchmark workloads.
 
 
+Building
+
+Install Maven. Then type:
+
+$ mvn package
+
+
 Getting started
 
->./s3bench.sh s3.domain.com mybucket accessKeyId secret*** [s3bench.properties]
+>./s3bench.sh s3.domain.com mybucket accessKeyId secret*** prefix [s3bench.properties]
 
 
 Customization options (s3bench.properties)
@@ -82,7 +89,8 @@ benchmark_single_stream=true
 # false: skip parallel workloads
 benchmark_multi_stream=true
 
-# The runtime of a single stream benchmark in seconds.
+# The runtime of a multi stream benchmark in seconds. If zero, just do
+# as many measurements as specified by sample_count.
 multi_stream_runtime_s=600
 
 # Number of clients during a multi-stream throughput benchmark.
