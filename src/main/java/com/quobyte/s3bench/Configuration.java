@@ -45,6 +45,7 @@ class Configuration {
   private static final boolean DEFAULT_BENCHMARK_TP = true;
   private static final boolean DEFAULT_BENCHMARK_OPS = true;
   private static final boolean DEFAULT_BENCHMARK_GET = true;
+  private static final boolean DEFAULT_BENCHMARK_GET_ONLY = false;
   private static final boolean DEFAULT_BENCHMARK_SINGLE_STREAM = true;
   private static final boolean DEFAULT_BENCHMARK_MULTI_STREAM = true;
   private static final boolean DEFAULT_PATH_STYLE = true;
@@ -111,6 +112,10 @@ class Configuration {
 
   boolean benchmarkGet() {
     return getBooleanProperty("benchmark_get", DEFAULT_BENCHMARK_GET);
+  }
+
+  boolean benchmarkGetOnly() {
+    return getBooleanProperty("benchmark_get_only", DEFAULT_BENCHMARK_GET_ONLY);
   }
 
   boolean pathStyle() {

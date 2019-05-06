@@ -111,8 +111,21 @@ public class S3BenchmarkClient {
 
     @Override
     void sampleRun(long sampleId) throws Throwable {
-      int sample = (int) (sampleId % configuration.getSampleCount());
-      client.putObject(bucket, clientId + sample, new ByteArrayInputStream(data), metadata);
+      // do not rewrite object, this is slower
+      //int sample = (int) (sampleId % configuration.getSampleCount());
+      int sample = (int) (sampleId);
+      // Using the path format for object keys leads sometimes to an exception for the first
+      // attempt, if the path does not exist. Therefore retry once if sampleId is zero.
+      try {
+        client.putObject(bucket, clientId + sample, new ByteArrayInputStream(data), metadata);
+      } catch(com.amazonaws.services.s3.model.AmazonS3Exception e) {
+        if (sampleId == 0) {
+          System.err.println("Exception ignored while putObject(): " + e.toString());
+          client.putObject(bucket, clientId + sample, new ByteArrayInputStream(data), metadata);
+        } else {
+          throw e;
+        }
+      }
     }
   }
 
@@ -170,7 +183,9 @@ public class S3BenchmarkClient {
       ThreadLocalRandom.current().nextBytes(data);
       System.out.println("method, min, max, avg, throughput (based on avg), ops/s (based on avg),"
                          + " operation count, bytes moved, seconds");
-      singleStreamWritePerformance(client, bucket, prefix, data);
+      if (!configuration.benchmarkGetOnly()) {
+        singleStreamWritePerformance(client, bucket, prefix, data);
+      }
       if (configuration.benchmarkGet()) {
         singleStreamReadPerformance(client, bucket, prefix, data);
       }
@@ -185,7 +200,9 @@ public class S3BenchmarkClient {
       ThreadLocalRandom.current().nextBytes(data);
       System.out.println("method, min, max, avg, throughput (based on avg), ops/s (based on avg),"
                          + " operation count, bytes moved, seconds");
-      singleStreamWritePerformance(client, bucket, prefix, data);
+      if (!configuration.benchmarkGetOnly()) {
+        singleStreamWritePerformance(client, bucket, prefix, data);
+      }
       if (configuration.benchmarkGet()) {
         singleStreamReadPerformance(client, bucket, prefix, data);
       }
@@ -253,7 +270,12 @@ public class S3BenchmarkClient {
       System.out.println("method, min, max, avg, aggregated throughput (based on avg),"
                          + " aggregated ops/s (based on avg),"
                          + " aggregated operation count, bytes moved, seconds");
-      boolean objectLayoutComplete = multiStreamWritePerformance(host, bucket, prefix, mode, limit, data);
+      boolean objectLayoutComplete;
+      if (!configuration.benchmarkGetOnly()) {
+        objectLayoutComplete = multiStreamWritePerformance(host, bucket, prefix, mode, limit, data);
+      } else {
+        objectLayoutComplete = true;
+      }
       if (configuration.benchmarkGet()) {
         if (objectLayoutComplete) {
           multiStreamReadPerformance(host, bucket, prefix, mode, limit, data);
@@ -279,7 +301,12 @@ public class S3BenchmarkClient {
       System.out.println("method, min, max, avg, aggregated throughput (based on avg),"
                          + " aggregated ops/s (based on avg),"
                          + " aggregated operation count, bytes moved, seconds");
-      boolean objectLayoutComplete = multiStreamWritePerformance(host, bucket, prefix, mode, limit, data);
+      boolean objectLayoutComplete;
+      if (!configuration.benchmarkGetOnly()) {
+        objectLayoutComplete = multiStreamWritePerformance(host, bucket, prefix, mode, limit, data);
+      } else {
+        objectLayoutComplete = true;
+      }
       if (configuration.benchmarkGet()) {
         if (objectLayoutComplete) {
           multiStreamReadPerformance(host, bucket, prefix, mode, limit, data);
